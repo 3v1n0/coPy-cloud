@@ -64,9 +64,36 @@ class CoPyCloud:
     def __sanitize_path(self, path):
         return '/'+path if path[0] != '/' else path
 
-    def list_files(self, path=None, max_items=sys.maxint):
+    def list_files(self, path=None, max_items=sys.maxint, list_watermark=False,
+                   include_total_items=False, recurse=False, include_parts=False,
+                   include_attributes=False, include_sync_filters=False,
+                   group_by_dir=False, include_child_counts=False,
+                   filter_name=None, sort_field=None, sort_direction=None):
         path = '/' if not path or not len(path) else path
         parameters = {'path': path, 'max_items': max_items}
+
+        if list_watermark:
+            parameters['list_watermark'] = True
+        if include_total_items:
+            parameters['include_total_items'] = True
+        if recurse:
+            parameters['recurse'] = True
+        if include_parts:
+            parameters['include_parts'] = True
+        if include_child_counts:
+            parameters['include_child_counts'] = True
+        if include_attributes:
+            parameters['include_attributes'] = True
+        if include_sync_filters:
+            parameters['include_sync_filters'] = True
+        if filter_name:
+            parameters['filter_name'] = filter_name
+        if group_by_dir:
+            parameters['group_by_dir'] = True
+        if sort_field:
+            parameters['sort_field'] = sort_field
+        if sort_direction:
+            parameters['sort_direction'] = sort_direction
 
         res = self.__post_req('list_objects', parameters)
 
