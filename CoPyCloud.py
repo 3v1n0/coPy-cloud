@@ -52,8 +52,11 @@ class CoPyCloud:
         headers = dict(self.DEFAULT_HEADERS.items() + headers.items())
         method = '/'+method if method[0] != '/' else method
 
-        res = self.http.request_encode_body(req_type, method, {'data': json.dumps(params)},
-                                            headers, encode_multipart=False)
+        if isinstance(params, dict):
+            res = self.http.request_encode_body(req_type, method, {'data': json.dumps(params)},
+                                                headers, encode_multipart=False)
+        else:
+            res = self.http.urlopen(req_type, method, params, headers)
 
         if res.status != 200:
             raise CoPyCloudError("Got HTTP error "+str(res.status))
