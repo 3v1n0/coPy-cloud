@@ -37,6 +37,7 @@ class CoPyCloud:
     DEFAULT_HEADERS = {'X-Client-Type': 'api', 'X-Api-Version': '1.0',
                        'X-Authorization': '', 'Accept': 'application/json' }
 
+    DEFAULT_ENCODING = 'latin-1'
     PART_MAX_SIZE = 1024*1024
     PARTS_HEADER_FMT = '!IIIIII'
     PARTS_HEADER_SIG = 0xba5eba11
@@ -74,7 +75,7 @@ class CoPyCloud:
 
         try:
             if 'content-type' in res.headers and res.headers['content-type'] == 'application/json':
-                jd = json.loads(res.data.decode('latin-1'), 'latin-1')
+                jd = json.loads(res.data.decode(self.DEFAULT_ENCODING), self.DEFAULT_ENCODING)
 
                 if jd and 'result' in jd and jd['result'] == 'error':
                     raise CoPyCloudError("Error %s: %s" % (jd['error_code'], jd['error_string']))
@@ -111,7 +112,7 @@ class CoPyCloud:
         for part in parts:
             data_size = part['size'] if 'data' in part else 0
             part_size = item_base_size + data_size
-            fingerprint = bytes(part['fingerprint'].encode('latin-1'))
+            fingerprint = bytes(part['fingerprint'].encode(self.DEFAULT_ENCODING))
             struct.pack_into(self.PART_ITEM_FMT, buf, pos, self.PART_ITEM_SIG, part_size,
                              self.PART_ITEM_VERSION, share_id, fingerprint, part['size'],
                              data_size, error_code, padding)
@@ -148,7 +149,7 @@ class CoPyCloud:
                 raise CoPyCloudError("Invalid binary part item header signature from server")
             if version != self.PART_ITEM_VERSION:
                 raise CoPyCloudError("Binary part item version mismatch")
-            if fingerprint[:-1] != bytes(part['fingerprint'].encode('latin-1')):
+            if fingerprint[:-1] != bytes(part['fingerprint'].encode(self.DEFAULT_ENCODING)):
                 raise CoPyCloudError("Part %u fingerprint mismatch" % part['offset'])
 
             if 'data' in part:
