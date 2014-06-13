@@ -34,7 +34,7 @@ class CoPyCloudError(Exception):
 
 class CoPyCloud:
 
-    API_URI = 'http://api.copy.com'
+    API_URI = 'https://api.copy.com'
     DEFAULT_HEADERS = {'X-Client-Type': 'api', 'X-Api-Version': '1.0',
                        'X-Authorization': '', 'Accept': 'text/plain' }
 
