@@ -60,7 +60,7 @@ class CoPyCloud:
 
 
     def __req(self, req_type, method, params={}, headers={}):
-        headers = dict(self.DEFAULT_HEADERS.items() + headers.items())
+        headers.update(self.DEFAULT_HEADERS)
         method = '/'+method if method[0] != '/' else method
 
         if isinstance(params, dict):
@@ -74,7 +74,7 @@ class CoPyCloud:
 
         try:
             if 'content-type' in res.headers and res.headers['content-type'] == 'application/json':
-                jd = json.loads(res.data, 'latin-1')
+                jd = json.loads(res.data.decode('latin-1'), 'latin-1')
 
                 if jd and 'result' in jd and jd['result'] == 'error':
                     raise CoPyCloudError("Error %s: %s" % (jd['error_code'], jd['error_string']))
@@ -111,8 +111,9 @@ class CoPyCloud:
         for part in parts:
             data_size = part['size'] if 'data' in part else 0
             part_size = item_base_size + data_size
+            fingerprint = bytes(part['fingerprint'].encode('latin-1'))
             struct.pack_into(self.PART_ITEM_FMT, buf, pos, self.PART_ITEM_SIG, part_size,
-                             self.PART_ITEM_VERSION, share_id, part['fingerprint'], part['size'],
+                             self.PART_ITEM_VERSION, share_id, fingerprint, part['size'],
                              data_size, error_code, padding)
 
             pos += item_base_size
@@ -147,7 +148,7 @@ class CoPyCloud:
                 raise CoPyCloudError("Invalid binary part item header signature from server")
             if version != self.PART_ITEM_VERSION:
                 raise CoPyCloudError("Binary part item version mismatch")
-            if fingerprint[:-1] != part['fingerprint']:
+            if fingerprint[:-1] != bytes(part['fingerprint'].encode('latin-1')):
                 raise CoPyCloudError("Part %u fingerprint mismatch" % part['offset'])
 
             if 'data' in part:
@@ -194,7 +195,7 @@ class CoPyCloud:
             part['data'] = f.read(part['size'])
 
 
-    def list_files(self, path=None, max_items=sys.maxint, list_watermark=False,
+    def list_files(self, path=None, max_items=sys.maxsize, list_watermark=False,
                    include_total_items=False, recurse=False, include_parts=False,
                    include_attributes=False, include_sync_filters=False,
                    group_by_dir=False, include_child_counts=False,
@@ -269,7 +270,7 @@ class CoPyCloud:
             raise CoPyCloudError("Impossible to open source file "+ str(e))
 
         parts = self.__get_file_parts(f)
-        parts_chunks = [parts[i:i+parallel] for i in xrange(0, len(parts), parallel)]
+        parts_chunks = [parts[i:i+parallel] for i in range(0, len(parts), parallel)]
 
         for parts_chunk in parts_chunks:
             missing_parts = self.__binary_parts_req('has_object_parts', parts_chunk)
