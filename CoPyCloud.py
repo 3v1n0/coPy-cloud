@@ -168,6 +168,7 @@ class CoPyCloud:
         self.__post_req('update_objects', {'meta': p})
 
     def __sanitize_path(self, path):
+        path = '/' if not path or not len(path) else path
         return '/'+path if path[0] != '/' else path
 
     def __get_file_parts(self, f):
@@ -196,7 +197,7 @@ class CoPyCloud:
                    include_attributes=False, include_sync_filters=False,
                    group_by_dir=False, include_child_counts=False,
                    filter_name=None, sort_field=None, sort_direction=None):
-        path = '/' if not path or not len(path) else path
+        path = self.__sanitize_path(path)
         parameters = {'path': path, 'max_items': max_items}
 
         if list_watermark:
