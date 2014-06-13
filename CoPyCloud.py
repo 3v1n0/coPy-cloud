@@ -36,7 +36,7 @@ class CoPyCloud:
 
     API_URI = 'https://api.copy.com'
     DEFAULT_HEADERS = {'X-Client-Type': 'api', 'X-Api-Version': '1.0',
-                       'X-Authorization': '', 'Accept': 'text/plain' }
+                       'X-Authorization': '', 'Accept': 'application/json' }
 
     PART_MAX_SIZE = 1024*1024
     PARTS_HEADER_FMT = '!IIIIII'
