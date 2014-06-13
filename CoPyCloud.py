@@ -27,17 +27,12 @@ import hashlib
 import struct
 import urllib3
 
-class CoPyCloudError(Exception):
-    def __init__(self, message):
-        Exception.__init__(self, message)
-
 class CoPyCloud:
-
     API_URI = 'https://api.copy.com'
+    DEFAULT_ENCODING = 'latin-1'
     DEFAULT_HEADERS = {'X-Client-Type': 'api', 'X-Api-Version': '1.0',
                        'X-Authorization': '', 'Accept': 'application/json' }
 
-    DEFAULT_ENCODING = 'latin-1'
     PART_MAX_SIZE = 1024*1024
     PARTS_HEADER_FMT = '!IIIIII'
     PARTS_HEADER_SIG = 0xba5eba11
@@ -46,7 +41,7 @@ class CoPyCloud:
     PART_ITEM_SIG = 0xcab005e5
     PART_ITEM_VERSION = 1
 
-    class CoPyCloudError(Exception):
+    class Error(Exception):
         def __init__(self, message):
             Exception.__init__(self, message)
 
@@ -55,7 +50,7 @@ class CoPyCloud:
         res = self.__post_req('auth_user', {'username': username, 'password' : password})
 
         if not res or 'auth_token' not in res:
-            raise CoPyCloudError("Invalid Login")
+            raise CoPyCloud.Error("Invalid Login")
 
         self.DEFAULT_HEADERS['X-Authorization'] = res['auth_token'].encode('ascii','ignore')
 
@@ -71,14 +66,14 @@ class CoPyCloud:
             res = self.http.urlopen(req_type, method, params, headers)
 
         if res.status != 200:
-            raise CoPyCloudError("Got HTTP error "+str(res.status))
+            raise CoPyCloud.Error("Got HTTP error "+str(res.status))
 
         try:
             if 'content-type' in res.headers and res.headers['content-type'] == 'application/json':
                 jd = json.loads(res.data.decode(self.DEFAULT_ENCODING), self.DEFAULT_ENCODING)
 
                 if jd and 'result' in jd and jd['result'] == 'error':
-                    raise CoPyCloudError("Error %s: %s" % (jd['error_code'], jd['error_string']))
+                    raise CoPyCloud.Error("Error %s: %s" % (jd['error_code'], jd['error_string']))
 
                 return jd
         except ValueError:
@@ -131,35 +126,35 @@ class CoPyCloud:
         pos += header_size
 
         if sig != self.PARTS_HEADER_SIG:
-            raise CoPyCloudError("Invalid binary header signature from server")
+            raise CoPyCloud.Error("Invalid binary header signature from server")
         if error != 0:
-            raise CoPyCloudError("Invalid binary response from server: "+str(ret[pos:]))
+            raise CoPyCloud.Error("Invalid binary response from server: "+str(ret[pos:]))
         if header_size != struct.calcsize(self.PARTS_HEADER_FMT):
-            raise CoPyCloudError("Invalid binary header size from server")
+            raise CoPyCloud.Error("Invalid binary header size from server")
         if version != self.PARTS_HEADER_VERSION:
-            raise CoPyCloudError("Binary header version mismatch")
+            raise CoPyCloud.Error("Binary header version mismatch")
         if parts_num != len(parts):
-            raise CoPyCloudError("Part count mismatch")
+            raise CoPyCloud.Error("Part count mismatch")
 
         for part in parts:
             (sig, item_size, version, share_id, fingerprint, remote_size, data_size, error, padding) = \
                 struct.unpack_from(self.PART_ITEM_FMT, ret, pos)
 
             if sig != self.PART_ITEM_SIG:
-                raise CoPyCloudError("Invalid binary part item header signature from server")
+                raise CoPyCloud.Error("Invalid binary part item header signature from server")
             if version != self.PART_ITEM_VERSION:
-                raise CoPyCloudError("Binary part item version mismatch")
+                raise CoPyCloud.Error("Binary part item version mismatch")
             if fingerprint[:-1] != bytes(part['fingerprint'].encode(self.DEFAULT_ENCODING)):
-                raise CoPyCloudError("Part %u fingerprint mismatch" % part['offset'])
+                raise CoPyCloud.Error("Part %u fingerprint mismatch" % part['offset'])
 
             if 'data' in part:
                 if error != 0:
                     offset = pos + item_base_size
-                    raise CoPyCloudError("Invalid binary part item: "+str(ret[offset:offset+data_size]))
+                    raise CoPyCloud.Error("Invalid binary part item: "+str(ret[offset:offset+data_size]))
                 if item_size != item_base_size:
-                    raise CoPyCloudError("Invalid binary part item size received from server")
+                    raise CoPyCloud.Error("Invalid binary part item size received from server")
                 if remote_size != part['size']:
-                    raise CoPyCloudError("Part %u local/remote size mismatch" % part['offset'])
+                    raise CoPyCloud.Error("Part %u local/remote size mismatch" % part['offset'])
             else:
                 if error != 0 or remote_size != part['size']:
                     invalid_parts.append(part)
@@ -186,7 +181,7 @@ class CoPyCloud:
             parts.append({'fingerprint': fingerprint, 'offset': offset, 'size': len(part_data)})
 
         if f.tell() != size:
-            raise CoPyCloudError("Impossible to generate full parts for file "+f.name)
+            raise CoPyCloud.Error("Impossible to generate full parts for file "+f.name)
 
         return parts
 
@@ -230,7 +225,7 @@ class CoPyCloud:
         res = self.__post_req('list_objects', parameters)
 
         if not res or 'children' not in res:
-            raise CoPyCloudError("Impossible to retrieve the files")
+            raise CoPyCloud.Error("Impossible to retrieve the files")
 
         if 'object' in res and 'type' in res['object'] and res['object']['type'] == 'file':
             return res['object']
@@ -239,28 +234,28 @@ class CoPyCloud:
 
     def create_folder(self, path):
         if not path or not len(path):
-            raise CoPyCloudError("Impossible to create a folder with an empty path")
+            raise CoPyCloud.Error("Impossible to create a folder with an empty path")
 
         self.__update_objects({'action': 'create', 'object_type': 'dir', 'path': self.__sanitize_path(path)})
 
     def move(self, src, dst):
         if not src or not len(src) or not dst or not len(dst):
-            raise CoPyCloudError("Impossible to move a file from/to an empty path")
+            raise CoPyCloud.Error("Impossible to move a file from/to an empty path")
 
         self.__update_objects({'action': 'rename', 'path': self.__sanitize_path(src), 'new_path': self.__sanitize_path(dst)})
 
     def remove(self, path):
         if not path or not len(path):
-            raise CoPyCloudError("Impossible to remove a file with an empty path")
+            raise CoPyCloud.Error("Impossible to remove a file with an empty path")
 
         self.__update_objects({'action': 'remove', 'path': self.__sanitize_path(path)})
 
     def download(self, path):
         if not path or not len(path):
-            raise CoPyCloudError("Impossible to download a file with an empty path")
+            raise CoPyCloud.Error("Impossible to download a file with an empty path")
 
         if not len(self.list_files(path, max_items=1)):
-            raise CoPyCloudError("Impossible to download '"+path+"'")
+            raise CoPyCloud.Error("Impossible to download '"+path+"'")
 
         return self.__post_req('download_object', {'path': path})
 
@@ -268,7 +263,7 @@ class CoPyCloud:
         try:
             f = open(source, 'rb')
         except Exception as e:
-            raise CoPyCloudError("Impossible to open source file "+ str(e))
+            raise CoPyCloud.Error("Impossible to open source file "+ str(e))
 
         parts = self.__get_file_parts(f)
         parts_chunks = [parts[i:i+parallel] for i in range(0, len(parts), parallel)]
