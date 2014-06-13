@@ -26,7 +26,6 @@ import json
 import hashlib
 import struct
 import urllib3
-from ctypes import create_string_buffer
 
 class CoPyCloudError(Exception):
     def __init__(self, message):
@@ -100,7 +99,7 @@ class CoPyCloud:
         header_size = struct.calcsize(self.PARTS_HEADER_FMT)
         item_base_size = struct.calcsize(self.PART_ITEM_FMT)
         items_data_size = sum([p['size'] if 'data' in p else 0 for p in parts])
-        buf = create_string_buffer(header_size + item_base_size * len(parts) + items_data_size)
+        buf = bytearray(header_size + item_base_size * len(parts) + items_data_size)
         error_code = 0
         padding = 0
         pos = 0
