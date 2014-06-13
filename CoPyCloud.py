@@ -24,8 +24,9 @@ import os
 import sys
 import json
 import hashlib
-import urllib3
 import struct
+import urllib3
+from ctypes import create_string_buffer
 
 class CoPyCloudError(Exception):
     def __init__(self, message):
@@ -37,6 +38,18 @@ class CoPyCloud:
     DEFAULT_HEADERS = {'X-Client-Type': 'api', 'X-Api-Version': '1.0',
                        'X-Authorization': '', 'Accept': 'text/plain' }
 
+    PART_MAX_SIZE = 1024*1024
+    PARTS_HEADER_FMT = '!IIIIII'
+    PARTS_HEADER_SIG = 0xba5eba11
+    PARTS_HEADER_VERSION = 1
+    PART_ITEM_FMT = '!IIII73sIIII'
+    PART_ITEM_SIG = 0xcab005e5
+    PART_ITEM_VERSION = 1
+
+    class CoPyCloudError(Exception):
+        def __init__(self, message):
+            Exception.__init__(self, message)
+
     def __init__(self, username, password):
         self.http = urllib3.connection_from_url(self.API_URI, block=True, maxsize=1)
         res = self.__post_req('auth_user', {'username': username, 'password' : password})
@@ -45,7 +58,6 @@ class CoPyCloud:
             raise CoPyCloudError("Invalid Login")
 
         self.DEFAULT_HEADERS['X-Authorization'] = res['auth_token'].encode('ascii','ignore')
-        print self.DEFAULT_HEADERS['X-Authorization']
 
 
     def __req(self, req_type, method, params={}, headers={}):
@@ -80,12 +92,108 @@ class CoPyCloud:
     def __get_req(self, method, headers={}):
         return self.__req('GET', method,  headers)
 
+    def __binary_parts_req(self, method, parts, share_id=0, headers={}):
+        if not len(parts):
+            return
+
+        invalid_parts = []
+        header_size = struct.calcsize(self.PARTS_HEADER_FMT)
+        item_base_size = struct.calcsize(self.PART_ITEM_FMT)
+        items_data_size = sum([p['size'] if 'data' in p else 0 for p in parts])
+        buf = create_string_buffer(header_size + item_base_size * len(parts) + items_data_size)
+        error_code = 0
+        padding = 0
+        pos = 0
+
+        struct.pack_into(self.PARTS_HEADER_FMT, buf, pos, self.PARTS_HEADER_SIG, header_size,
+                         self.PARTS_HEADER_VERSION, len(buf) - header_size, len(parts), error_code)
+        pos += header_size
+
+        for part in parts:
+            data_size = part['size'] if 'data' in part else 0
+            part_size = item_base_size + data_size
+            struct.pack_into(self.PART_ITEM_FMT, buf, pos, self.PART_ITEM_SIG, part_size,
+                             self.PART_ITEM_VERSION, share_id, part['fingerprint'], part['size'],
+                             data_size, error_code, padding)
+
+            pos += item_base_size
+
+            if data_size > 0:
+                buf[pos:pos+data_size] = part['data']
+                pos += data_size
+
+        ret = self.__post_req(method, buf, {'Content-Type': 'application/octet-stream'})
+
+        pos = 0
+        r = (sig, header_size, version, parts_size, parts_num, error) = \
+            struct.unpack_from(self.PARTS_HEADER_FMT, ret, pos)
+        pos += header_size
+
+        if sig != self.PARTS_HEADER_SIG:
+            raise CoPyCloudError("Invalid binary header signature from server")
+        if error != 0:
+            raise CoPyCloudError("Invalid binary response from server: "+str(ret[pos:]))
+        if header_size != struct.calcsize(self.PARTS_HEADER_FMT):
+            raise CoPyCloudError("Invalid binary header size from server")
+        if version != self.PARTS_HEADER_VERSION:
+            raise CoPyCloudError("Binary header version mismatch")
+        if parts_num != len(parts):
+            raise CoPyCloudError("Part count mismatch")
+
+        for part in parts:
+            (sig, item_size, version, share_id, fingerprint, remote_size, data_size, error, padding) = \
+                struct.unpack_from(self.PART_ITEM_FMT, ret, pos)
+
+            if sig != self.PART_ITEM_SIG:
+                raise CoPyCloudError("Invalid binary part item header signature from server")
+            if version != self.PART_ITEM_VERSION:
+                raise CoPyCloudError("Binary part item version mismatch")
+            if fingerprint[:-1] != part['fingerprint']:
+                raise CoPyCloudError("Part %u fingerprint mismatch" % part['offset'])
+
+            if 'data' in part:
+                if error != 0:
+                    offset = pos + item_base_size
+                    raise CoPyCloudError("Invalid binary part item: "+str(ret[offset:offset+data_size]))
+                if item_size != item_base_size:
+                    raise CoPyCloudError("Invalid binary part item size received from server")
+                if remote_size != part['size']:
+                    raise CoPyCloudError("Part %u local/remote size mismatch" % part['offset'])
+            else:
+                if error != 0 or remote_size != part['size']:
+                    invalid_parts.append(part)
+
+            pos += item_base_size
+
+        return invalid_parts
+
     def __update_objects(self, parameters):
         p = [parameters] if isinstance(parameters, dict) else p
         self.__post_req('update_objects', {'meta': p})
 
     def __sanitize_path(self, path):
         return '/'+path if path[0] != '/' else path
+
+    def __get_file_parts(self, f):
+        parts = []
+        size = os.path.getsize(f.name)
+
+        while f.tell() < size:
+            offset = f.tell()
+            part_data = f.read(self.PART_MAX_SIZE)
+            fingerprint = hashlib.md5(part_data).hexdigest() + hashlib.sha1(part_data).hexdigest()
+            parts.append({'fingerprint': fingerprint, 'offset': offset, 'size': len(part_data)})
+
+        if f.tell() != size:
+            raise CoPyCloudError("Impossible to generate full parts for file "+f.name)
+
+        return parts
+
+    def __fill_file_parts(self, f, parts):
+        for part in parts:
+            f.seek(part['offset'])
+            part['data'] = f.read(part['size'])
+
 
     def list_files(self, path=None, max_items=sys.maxint, list_watermark=False,
                    include_total_items=False, recurse=False, include_parts=False,
