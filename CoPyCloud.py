@@ -264,7 +264,26 @@ class CoPyCloud:
         return self.__post_req('download_object', {'path': path})
 
     def upload(self, source, dest, share_id=0):
-        pass
+        try:
+            f = open(source, 'rb')
+        except Exception as e:
+            raise CoPyCloudError("Impossible to open source file "+ str(e))
+
+        parts = self.__get_file_parts(f)
+        upload_parts = self.__binary_parts_req('has_object_parts', parts)
+
+        if len(upload_parts):
+            self.__fill_file_parts(f, upload_parts)
+            self.__binary_parts_req('send_object_parts', upload_parts)
+
+            for part in parts:
+                del(part['data'])
+
+        update_params = {'action': 'create', 'object_type': 'file', 'path': self.__sanitize_path(dest),
+                         'size': os.path.getsize(f.name), 'parts': parts}
+        self.__update_objects(update_params)
+
+        f.close()
 
 
 if __name__ == "__main__":
