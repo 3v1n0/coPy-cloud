@@ -164,7 +164,7 @@ class CoPyCloud:
         return invalid_parts
 
     def __update_objects(self, parameters):
-        p = [parameters] if isinstance(parameters, dict) else p
+        p = [parameters] if isinstance(parameters, dict) else parameters
         self.__post_req('update_objects', {'meta': p})
 
     def __sanitize_path(self, path):
