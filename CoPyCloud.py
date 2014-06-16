@@ -245,11 +245,13 @@ class CoPyCloud:
 
         self.__update_objects({'action': 'rename', 'path': self.__sanitize_path(src), 'new_path': self.__sanitize_path(dst)})
 
-    def remove(self, path):
-        if not path or not len(path):
-            raise CoPyCloud.Error("Impossible to remove a file with an empty path")
+    def remove(self, paths):
+        if not paths or not len(paths):
+            raise CoPyCloud.Error("Impossible to remove a file with an empty path, or an empty list of elements")
+        if isinstance(paths, str):
+            paths = [paths]
 
-        self.__update_objects({'action': 'remove', 'path': self.__sanitize_path(path)})
+        self.__update_objects([{'action': 'remove', 'path': self.__sanitize_path(p)} for p in paths])
 
     def download(self, path):
         if not path or not len(path):
